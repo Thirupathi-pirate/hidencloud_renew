@@ -496,21 +496,39 @@ class HidenCloudBot:
     def try_handle_invoice_from_response(self, service_id, response, allow_invoice_poll=True):
         if '/invoice/' in response.url:
             self.log("⚡️ 续期成功，已跳转账单页，自动执行支付...")
-            self.perform_pay_from_html(response.text, response.url)
-            return True, 'invoice_link'
+            pay_result = self.perform_pay_from_html(response.text, response.url)
+            if pay_result in {'paid', 'already_processed'}:
+                return True, 'invoice_page'
+            if not allow_invoice_poll:
+                return False, None
+            self.log("⚠️ 跳转账单页当前不可支付，改为检查当前服务未付账单...")
+            invoice_polled = self.check_and_pay_invoices(service_id, is_precheck=False, retries=6, retry_delay=8)
+            if invoice_polled:
+                return True, 'invoice_poll'
+            return False, None
 
         soup_resp = BeautifulSoup(response.text, 'html.parser')
         invoice_links = self.extract_invoice_links(soup_resp, require_payment_context=False)
         if invoice_links:
-            invoice_url = invoice_links[0]
-            self.log(f"🔗 在响应HTML中发现账单链接: {invoice_url}")
-            self.pay_single_invoice(invoice_url)
-            return True, 'server_reject'
+            for invoice_url in invoice_links:
+                self.log(f"🔗 在响应HTML中发现账单链接: {invoice_url}")
+                pay_result = self.pay_single_invoice(invoice_url)
+                if pay_result in {'paid', 'already_processed'}:
+                    return True, 'invoice_link'
+
+            if not allow_invoice_poll:
+                return False, None
+
+            self.log("⚠️ 响应中的账单链接均不可支付，改为检查当前服务未付账单...")
+            invoice_polled = self.check_and_pay_invoices(service_id, is_precheck=False, retries=6, retry_delay=8)
+            if invoice_polled:
+                return True, 'invoice_poll'
+            return False, None
 
         err_div = soup_resp.find('div', class_=re.compile(r'(alert-danger|text-danger|error)'))
         if err_div:
             self.log(f"⚠️ 续期请求被服务端拒绝，页面提示: {err_div.get_text(strip=True)}")
-            return True
+            return True, 'server_reject'
 
         if not allow_invoice_poll:
             return False, None
@@ -655,10 +673,13 @@ class HidenCloudBot:
                     return False
 
                 self.log(f"🔍 发现 {len(unique_invoices)} 个未付账单，准备清理...")
+                paid_any = False
                 for url in unique_invoices:
-                    self.pay_single_invoice(url)
+                    pay_result = self.pay_single_invoice(url)
+                    if pay_result in {'paid', 'already_processed'}:
+                        paid_any = True
                     sleep_random(3000, 5000)
-                return True
+                return paid_any
 
             except Exception as e:
                 self.log(f"查账单出错: {e}")
@@ -667,22 +688,30 @@ class HidenCloudBot:
 
     def pay_single_invoice(self, url):
         normalized_url = self.normalize_url(url)
+        if normalized_url in self.processed_invoices:
+            self.log(f"⏭️ 账单已处理，跳过重复支付: {normalized_url}")
+            return 'already_processed'
+        if normalized_url in self.non_payable_invoices:
+            self.log(f"⏭️ 账单当前不可支付，跳过重复检查: {normalized_url}")
+            return 'non_payable'
+
         try:
             self.log(f"📄 打开账单: {normalized_url}")
             res = self.request('GET', normalized_url)
-            self.perform_pay_from_html(res.text, normalized_url)
+            return self.perform_pay_from_html(res.text, normalized_url)
         except Exception as e:
             self.log(f"访问账单失败: {e}")
             self.mark_retry_needed("账单页面访问失败")
+            return 'invoice_fetch_failed'
 
     def perform_pay_from_html(self, html_content, current_url):
         normalized_current_url = self.normalize_url(current_url)
         if normalized_current_url in self.processed_invoices:
             self.log(f"⏭️ 账单已处理，跳过重复支付: {normalized_current_url}")
-            return
+            return 'already_processed'
         if normalized_current_url in self.non_payable_invoices:
             self.log(f"⏭️ 账单当前不可支付，跳过重复检查: {normalized_current_url}")
-            return
+            return 'non_payable'
 
         soup = BeautifulSoup(html_content, 'html.parser')
         self._refresh_csrf(soup)
@@ -718,10 +747,11 @@ class HidenCloudBot:
             if not self.has_invoice_payment_context(page_text):
                 self.non_payable_invoices.add(normalized_current_url)
                 self.log(f"⚪ 账单页面未显示未支付/支付入口，视为本轮不可支付并跳过: {normalized_current_url}")
+                return 'non_payable'
             else:
                 self.log(f"⚠️ 未找到可用的支付表单，可能页面结构变更。标题: {page_title}")
                 self.mark_retry_needed(f"账单 {normalized_current_url} 页面结构疑似变更")
-            return
+                return 'payment_form_missing'
 
         payload = {}
         for inp in target_form.find_all('input'):
@@ -739,12 +769,15 @@ class HidenCloudBot:
             if res.status_code == 200:
                 self.log("✅ 支付成功！")
                 self.processed_invoices.add(normalized_current_url)
+                return 'paid'
             else:
                 self.log(f"⚠️ 支付响应: {res.status_code}")
                 self.mark_retry_needed(f"账单 {normalized_current_url} 支付响应异常")
+                return 'payment_failed'
         except Exception as e:
             self.log(f"❌ 支付失败: {e}")
             self.mark_retry_needed(f"账单 {normalized_current_url} 支付异常")
+            return 'payment_failed'
 
 # ================= 主程序 =================
 if __name__ == '__main__':
