@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-QingLong 风格的单选通知分发模块。
+QingLong-style single-channel notification dispatch module.
 
-特点：
-- 默认渠道为 wxPusherBot
-- 支持 QingLong 官方通知类型
-- 保留当前项目旧版 WxPusher 环境变量兼容
-- 统一按 UTF-8 处理中文内容
+Features:
+- Default channel is wxPusherBot
+- Supports QingLong official notification types
+- Maintains backward compatibility with legacy WxPusher environment variables
+- Unified UTF-8 handling for Chinese content
 """
 
 from __future__ import annotations
@@ -182,55 +182,55 @@ def _validate_wxpusher() -> tuple[bool, str]:
     app_token = _env_first("WXPUSHER_APP_TOKEN", "WP_APP_TOKEN_ONE")
     receivers = _env_first("WXPUSHER_TOPIC_IDS") or _env_first("WXPUSHER_UIDS", "WP_UIDs")
     if not app_token:
-        return False, "缺少 WXPUSHER_APP_TOKEN 或 WP_APP_TOKEN_ONE"
+        return False, "Missing WXPUSHER_APP_TOKEN or WP_APP_TOKEN_ONE"
     if not receivers:
-        return False, "缺少 WXPUSHER_TOPIC_IDS / WXPUSHER_UIDS / WP_UIDs"
+        return False, "Missing WXPUSHER_TOPIC_IDS / WXPUSHER_UIDS / WP_UIDs"
     return True, ""
 
 
 def _validate_wework_app() -> tuple[bool, str]:
     raw = _env_first("QYWX_AM")
     if not raw:
-        return False, "缺少 QYWX_AM"
+        return False, "Missing QYWX_AM"
     parts = [item.strip() for item in raw.split(",") if item.strip()]
     if len(parts) not in {4, 5}:
-        return False, "QYWX_AM 格式应为 corpid,corpsecret,touser,agentid[,media_id]"
+        return False, "QYWX_AM format should be corpid,corpsecret,touser,agentid[,media_id]"
     return True, ""
 
 
 def _validate_dingtalk() -> tuple[bool, str]:
     if not _env_first("DD_BOT_TOKEN"):
-        return False, "缺少 DD_BOT_TOKEN"
+        return False, "Missing DD_BOT_TOKEN"
     return True, ""
 
 
 def validate_channel_config(channel: str) -> tuple[bool, str]:
     validators: dict[str, Callable[[], tuple[bool, str]]] = {
-        "gotify": lambda: (bool(_env_first("GOTIFY_URL") and _env_first("GOTIFY_TOKEN")), "缺少 GOTIFY_URL 或 GOTIFY_TOKEN"),
-        "goCqHttpBot": lambda: (bool(_env_first("GOBOT_URL") and _env_first("GOBOT_QQ")), "缺少 GOBOT_URL 或 GOBOT_QQ"),
-        "serverChan": lambda: (bool(_env_first("PUSH_KEY", "SERVERCHAN_SENDKEY")), "缺少 PUSH_KEY 或 SERVERCHAN_SENDKEY"),
-        "pushDeer": lambda: (bool(_env_first("DEER_KEY", "PUSHDEER_KEY")), "缺少 DEER_KEY 或 PUSHDEER_KEY"),
-        "bark": lambda: (bool(_env_first("BARK_PUSH")), "缺少 BARK_PUSH"),
-        "chat": lambda: (bool(_env_first("CHAT_URL") and _env_first("CHAT_TOKEN")), "缺少 CHAT_URL 或 CHAT_TOKEN"),
-        "telegramBot": lambda: (bool(_env_first("TG_BOT_TOKEN") and _env_first("TG_CHAT_ID", "TG_USER_ID")), "缺少 TG_BOT_TOKEN 或 TG_CHAT_ID/TG_USER_ID"),
+        "gotify": lambda: (bool(_env_first("GOTIFY_URL") and _env_first("GOTIFY_TOKEN")), "Missing GOTIFY_URL or GOTIFY_TOKEN"),
+        "goCqHttpBot": lambda: (bool(_env_first("GOBOT_URL") and _env_first("GOBOT_QQ")), "Missing GOBOT_URL or GOBOT_QQ"),
+        "serverChan": lambda: (bool(_env_first("PUSH_KEY", "SERVERCHAN_SENDKEY")), "Missing PUSH_KEY or SERVERCHAN_SENDKEY"),
+        "pushDeer": lambda: (bool(_env_first("DEER_KEY", "PUSHDEER_KEY")), "Missing DEER_KEY or PUSHDEER_KEY"),
+        "bark": lambda: (bool(_env_first("BARK_PUSH")), "Missing BARK_PUSH"),
+        "chat": lambda: (bool(_env_first("CHAT_URL") and _env_first("CHAT_TOKEN")), "Missing CHAT_URL or CHAT_TOKEN"),
+        "telegramBot": lambda: (bool(_env_first("TG_BOT_TOKEN") and _env_first("TG_CHAT_ID", "TG_USER_ID")), "Missing TG_BOT_TOKEN or TG_CHAT_ID/TG_USER_ID"),
         "dingtalkBot": _validate_dingtalk,
-        "weWorkBot": lambda: (bool(_env_first("QYWX_KEY")), "缺少 QYWX_KEY"),
+        "weWorkBot": lambda: (bool(_env_first("QYWX_KEY")), "Missing QYWX_KEY"),
         "weWorkApp": _validate_wework_app,
-        "aibotk": lambda: (bool(_env_first("AIBOTK_KEY") and _env_first("AIBOTK_TYPE") and _env_first("AIBOTK_NAME")), "缺少 AIBOTK_KEY/AIBOTK_TYPE/AIBOTK_NAME"),
-        "iGot": lambda: (bool(_env_first("IGOT_PUSH_KEY")), "缺少 IGOT_PUSH_KEY"),
-        "pushPlus": lambda: (bool(_env_first("PUSH_PLUS_TOKEN", "PUSHPLUS_TOKEN")), "缺少 PUSH_PLUS_TOKEN 或 PUSHPLUS_TOKEN"),
-        "wePlusBot": lambda: (bool(_env_first("WE_PLUS_BOT_TOKEN")), "缺少 WE_PLUS_BOT_TOKEN"),
-        "email": lambda: (bool(_env_first("SMTP_SERVER") and _env_first("SMTP_EMAIL") and _env_first("SMTP_PASSWORD") and _env_first("SMTP_NAME")), "缺少 SMTP_SERVER/SMTP_EMAIL/SMTP_PASSWORD/SMTP_NAME"),
-        "pushMe": lambda: (bool(_env_first("PUSHME_KEY")), "缺少 PUSHME_KEY"),
-        "feishu": lambda: (bool(_env_first("FEISHU_WEBHOOK", "FSKEY")), "缺少 FEISHU_WEBHOOK 或 FSKEY"),
-        "webhook": lambda: (bool(_env_first("WEBHOOK_URL") and _env_first("WEBHOOK_METHOD")), "缺少 WEBHOOK_URL 或 WEBHOOK_METHOD"),
-        "chronocat": lambda: (bool(_env_first("CHRONOCAT_URL") and _env_first("CHRONOCAT_QQ") and _env_first("CHRONOCAT_TOKEN")), "缺少 CHRONOCAT_URL/CHRONOCAT_QQ/CHRONOCAT_TOKEN"),
-        "ntfy": lambda: (bool(_env_first("NTFY_URL") and _env_first("NTFY_TOPIC")), "缺少 NTFY_URL 或 NTFY_TOPIC"),
+        "aibotk": lambda: (bool(_env_first("AIBOTK_KEY") and _env_first("AIBOTK_TYPE") and _env_first("AIBOTK_NAME")), "Missing AIBOTK_KEY/AIBOTK_TYPE/AIBOTK_NAME"),
+        "iGot": lambda: (bool(_env_first("IGOT_PUSH_KEY")), "Missing IGOT_PUSH_KEY"),
+        "pushPlus": lambda: (bool(_env_first("PUSH_PLUS_TOKEN", "PUSHPLUS_TOKEN")), "Missing PUSH_PLUS_TOKEN or PUSHPLUS_TOKEN"),
+        "wePlusBot": lambda: (bool(_env_first("WE_PLUS_BOT_TOKEN")), "Missing WE_PLUS_BOT_TOKEN"),
+        "email": lambda: (bool(_env_first("SMTP_SERVER") and _env_first("SMTP_EMAIL") and _env_first("SMTP_PASSWORD") and _env_first("SMTP_NAME")), "Missing SMTP_SERVER/SMTP_EMAIL/SMTP_PASSWORD/SMTP_NAME"),
+        "pushMe": lambda: (bool(_env_first("PUSHME_KEY")), "Missing PUSHME_KEY"),
+        "feishu": lambda: (bool(_env_first("FEISHU_WEBHOOK", "FSKEY")), "Missing FEISHU_WEBHOOK or FSKEY"),
+        "webhook": lambda: (bool(_env_first("WEBHOOK_URL") and _env_first("WEBHOOK_METHOD")), "Missing WEBHOOK_URL or WEBHOOK_METHOD"),
+        "chronocat": lambda: (bool(_env_first("CHRONOCAT_URL") and _env_first("CHRONOCAT_QQ") and _env_first("CHRONOCAT_TOKEN")), "Missing CHRONOCAT_URL/CHRONOCAT_QQ/CHRONOCAT_TOKEN"),
+        "ntfy": lambda: (bool(_env_first("NTFY_URL") and _env_first("NTFY_TOPIC")), "Missing NTFY_URL or NTFY_TOPIC"),
         "wxPusherBot": _validate_wxpusher,
     }
     validator = validators.get(channel)
     if not validator:
-        return False, f"未注册渠道校验器: {channel}"
+        return False, f"Unregistered channel validator: {channel}"
     return validator()
 
 
@@ -273,7 +273,7 @@ def send_gotify(title: str, content: str) -> bool:
 def send_go_cqhttp(title: str, content: str) -> bool:
     url = _env_first("GOBOT_URL")
     params = {
-        "message": f"标题:{title}\n内容:{content}",
+        "message": f"Title:{title}\nContent:{content}",
     }
     token = _env_first("GOBOT_TOKEN")
     if token:
@@ -437,14 +437,14 @@ def send_aibotk(title: str, content: str) -> bool:
         payload = {
             "apiKey": _env_first("AIBOTK_KEY"),
             "roomName": _env_first("AIBOTK_NAME"),
-            "message": {"type": 1, "content": f"【青龙快讯】\n\n{title}\n{content}"},
+            "message": {"type": 1, "content": f"[QingLong News]\n\n{title}\n{content}"},
         }
     else:
         url = "https://api-bot.aibotk.com/openapi/v1/chat/contact"
         payload = {
             "apiKey": _env_first("AIBOTK_KEY"),
             "name": _env_first("AIBOTK_NAME"),
-            "message": {"type": 1, "content": f"【青龙快讯】\n\n{title}\n{content}"},
+            "message": {"type": 1, "content": f"[QingLong News]\n\n{title}\n{content}"},
         }
     response = requests.post(
         url=url,
@@ -699,21 +699,21 @@ SENDERS: dict[str, Callable[[str, str], bool]] = {
 def send_notify(title: str, content: str) -> bool:
     channel = normalize_channel(os.environ.get("NOTIFY_CHANNEL"))
     if channel not in OFFICIAL_CHANNELS:
-        _log(f"不支持的通知渠道: {channel}")
+        _log(f"Unsupported notification channel: {channel}")
         return False
     is_valid, reason = validate_channel_config(channel)
     if not is_valid:
-        _log(f"通知渠道 {channel} 缺少必要配置，跳过推送：{reason}")
+        _log(f"Notification channel {channel} missing required config, skipping push: {reason}")
         return False
 
     try:
         ok = SENDERS[channel](title, content)
     except Exception as exc:
-        _log(f"通知渠道 {channel} 推送失败：{exc}")
+        _log(f"Notification channel {channel} push failed: {exc}")
         return False
 
     if ok:
-        _log(f"通知渠道 {channel} 推送成功")
+        _log(f"Notification channel {channel} push successful")
     else:
-        _log(f"通知渠道 {channel} 推送失败")
+        _log(f"Notification channel {channel} push failed")
     return ok
