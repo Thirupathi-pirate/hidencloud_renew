@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-HidenCloud 自动续期 - Python 全日志推送版
+HidenCloud Auto Renew - Python Full Log Push Version
 """
 import os
 import sys
@@ -94,24 +94,24 @@ except ModuleNotFoundError:
 
     def success_path_label(stage, rebuild_retry=False):
         if stage == 'first_submit':
-            return '重建会话后首次提交进入成功路径' if rebuild_retry else '首次提交进入成功路径'
+            return 'First submission entered success path after session rebuild' if rebuild_retry else 'First submission entered success path'
         if stage == 'same_session_retry':
-            return '重建会话后重试进入成功路径' if rebuild_retry else '同会话重试后进入成功路径'
-        return '进入成功路径'
+            return 'Retry entered success path after session rebuild' if rebuild_retry else 'Retry within same session entered success path'
+        return 'Entered success path'
 
-# ================= 配置常量 =================
+# ================= Configuration Constants =================
 RENEW_DAYS = 7
 CACHE_FILE_NAME = 'hiden_cookies.json'
 LOCAL_CACHE_PATH = os.path.join(os.path.dirname(__file__), CACHE_FILE_NAME)
 
-# ================= 全局日志收集器 =================
+# ================= Global Log Collector =================
 ALL_LOGS = []
 
 def log_print(msg):
     print(msg)
     ALL_LOGS.append(str(msg))
 
-# ================= WebDAV 模块 =================
+# ================= WebDAV Module =================
 class WebDavManager:
     def __init__(self):
         self.url = os.environ.get("WEBDAV_URL", "")
@@ -124,28 +124,28 @@ class WebDavManager:
 
     def download(self):
         if not self.url or not self.user:
-            log_print("⚠️ 未配置 WebDAV，跳过云端同步")
+            log_print("⚠️ WebDAV not configured, skipping cloud sync")
             return
 
-        log_print("☁️ 正在从 Infinicloud 下载缓存...")
+        log_print("☁️ Downloading cache from Infinicloud...")
         try:
             res = requests.get(self.full_url, auth=(self.user, self.password), timeout=30)
             if res.status_code == 200:
                 with open(LOCAL_CACHE_PATH, 'w', encoding='utf-8') as f:
                     f.write(res.text)
-                log_print("✅ 云端缓存下载成功")
+                log_print("✅ Cloud cache downloaded successfully")
             elif res.status_code == 404:
-                log_print("⚪ 云端暂无缓存文件 (首次运行)")
+                log_print("⚪ No cloud cache file yet (first run)")
             else:
-                log_print(f"⚠️ 下载失败，状态码: {res.status_code}")
+                log_print(f"⚠️ Download failed, status code: {res.status_code}")
         except Exception as e:
-            log_print(f"❌ WebDAV 下载错误: {e}")
+            log_print(f"❌ WebDAV download error: {e}")
 
     def upload(self, data):
         if not self.url or not self.user:
             return
 
-        log_print("☁️ 正在上传最新缓存到 Infinicloud...")
+        log_print("☁️ Uploading latest cache to Infinicloud...")
         try:
             json_str = json.dumps(data, indent=2)
             res = requests.put(
@@ -156,13 +156,13 @@ class WebDavManager:
                 timeout=30
             )
             if res.status_code in [200, 201, 204]:
-                log_print("✅ 云端缓存上传成功")
+                log_print("✅ Cloud cache uploaded successfully")
             else:
-                log_print(f"❌ WebDAV 上传失败: {res.status_code}")
+                log_print(f"❌ WebDAV upload failed: {res.status_code}")
         except Exception as e:
-            log_print(f"❌ WebDAV 上传错误: {e}")
+            log_print(f"❌ WebDAV upload error: {e}")
 
-# ================= 辅助工具 =================
+# ================= Helper Utilities =================
 def sleep_random(min_ms=3000, max_ms=8000):
     sec = random.randint(min_ms, max_ms) / 1000.0
     time.sleep(sec)
@@ -175,27 +175,27 @@ class CacheManager:
                 with open(LOCAL_CACHE_PATH, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except:
-                log_print("读取本地缓存失败")
+                log_print("Failed to read local cache")
         return {}
 
     @staticmethod
     def update(index, cookie_str, upload=True):
-        """只在内容真正变化时才写盘/上传，减少无效 WebDAV 请求。"""
+        """Only write/upload when content actually changes, reducing unnecessary WebDAV requests."""
         data = CacheManager.load()
         key = str(index)
 
         if data.get(key) == cookie_str:
-            return  # 无变化，跳过
+            return  # No change, skip
 
         data[key] = cookie_str
         with open(LOCAL_CACHE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
-        log_print(f"💾 [账号 {index + 1}] 本地缓存已更新")
+        log_print(f"💾 [Account {index + 1}] Local cache updated")
 
         if upload:
             WebDavManager().upload(data)
 
-# ================= 核心机器人类 =================
+# ================= Core Bot Class =================
 class HidenCloudBot:
     def __init__(self, env_cookie, index):
         self.index = index + 1
@@ -205,30 +205,30 @@ class HidenCloudBot:
 
         self.csrf_token = ""
         self.services = []
-        # 跨服务去重集合，避免对同一张账单反复尝试支付
+        # Cross-service dedup set to avoid repeated payment attempts on the same invoice
         self.processed_invoices = set()
-        # 本轮运行中已确认当前页面不可支付的账单，避免每个服务重复打开
+        # Invoices confirmed unpayable on current page during this run, avoid re-opening per service
         self.non_payable_invoices = set()
-        # 标记本账号本轮是否建议由 GitHub Actions 稍后重跑一次
+        # Flag whether this account recommends GitHub Actions to re-run later this cycle
         self.retry_needed = False
 
         cached_data = CacheManager.load()
         cached_cookie = cached_data.get(str(index))
 
         if cached_cookie:
-            log_print(f"[账号 {self.index}] 发现本地缓存 Cookie，优先使用...")
+            log_print(f"[Account {self.index}] Found local cached Cookie, using it first...")
             self.load_cookie_str(cached_cookie)
         else:
-            log_print(f"[账号 {self.index}] 使用环境变量 Cookie...")
+            log_print(f"[Account {self.index}] Using environment variable Cookie...")
             self.load_cookie_str(env_cookie)
 
     def log(self, msg):
-        log_print(f"[账号 {self.index}] {msg}")
+        log_print(f"[Account {self.index}] {msg}")
 
     def mark_retry_needed(self, reason):
         self.retry_needed = True
         if reason:
-            self.log(f"🔁 标记本轮任务需要重试: {reason}")
+            self.log(f"🔁 Marked this run for retry: {reason}")
 
     def create_session(self):
         return cloudscraper.create_scraper(
@@ -294,7 +294,7 @@ class HidenCloudBot:
             if name not in changed_names:
                 changed_names.append(name)
         stage_text = f"{stage} " if stage else ""
-        self.log(f"[COOKIE_NORMALIZED] {stage_text}检测到并归一化关键 Cookie: {', '.join(changed_names)}")
+        self.log(f"[COOKIE_NORMALIZED] {stage_text}Detected and normalized critical Cookie: {', '.join(changed_names)}")
         return True
 
     def find_cookie_value(self, *names, preferred_domain=''):
@@ -316,18 +316,18 @@ class HidenCloudBot:
             if domain_matches:
                 matches = domain_matches
 
-        # requests 在同名 cookie 上可能抛 CookieConflictError，这里手动挑一个最合适的值。
+        # requests may throw CookieConflictError on same-name cookies; manually pick the best match.
         matches.sort(key=lambda cookie: (len(cookie.domain or ''), len(cookie.path or '')))
         return matches[-1].value
 
     def save_cookies(self, upload=True):
-        """由关键操作节点显式调用，而非每次请求都触发。"""
+        """Called explicitly at key operation points, not triggered on every request."""
         CacheManager.update(self.index - 1, self.get_cookie_str(), upload=upload)
 
     def reset_to_env(self, env_cookie):
         self.session.cookies.clear()
         self.load_cookie_str(env_cookie)
-        self.log("切换回环境变量原始 Cookie 重试...")
+        self.log("Switching back to environment variable Cookie for retry...")
 
     def rebuild_session(self, cookie_str=None):
         self.session = self.create_session()
@@ -337,13 +337,13 @@ class HidenCloudBot:
 
     def rebuild_session_and_reinit(self):
         current_cookie = self.get_cookie_str()
-        self.log("♻️ 重建会话并重新验证登录状态...")
+        self.log("♻️ Rebuilding session and re-verifying login status...")
         self.rebuild_session(current_cookie)
 
         if self.init():
             return True, 'invoice_page'
 
-        self.log("⚠️ 当前 Cookie 重建会话后初始化失败，回退环境变量 Cookie 再试一次...")
+        self.log("⚠️ Current Cookie failed to initialize after session rebuild, falling back to environment variable Cookie for another try...")
         self.rebuild_session()
         self.load_cookie_str(self.env_cookie)
         return self.init()
@@ -355,16 +355,16 @@ class HidenCloudBot:
             self.normalize_critical_cookies(f"{method} {url}")
             return resp
         except Exception as e:
-            self.log(f"请求异常: {e}")
+            self.log(f"Request exception: {e}")
             raise
 
     def _refresh_csrf(self, soup):
-        """从页面 HTML 中刷新 CSRF token，防止因 token 过期导致 419 错误。"""
+        """Refresh CSRF token from page HTML to prevent 419 errors from expired tokens."""
         token_tag = soup.find('meta', attrs={'name': 'csrf-token'})
         if token_tag:
             self.csrf_token = token_tag['content']
             return
-        # 降级：从表单 _token 字段读取
+        # Fallback: read from form _token field
         token_input = soup.find('input', attrs={'name': '_token'})
         if token_input:
             self.csrf_token = token_input['value']
@@ -497,7 +497,7 @@ class HidenCloudBot:
                 return form, action_url
 
             form_text = form.get_text(" ", strip=True)
-            if '/renew' in action_url or 'renew' in form_text.lower() or '续期' in form_text:
+            if '/renew' in action_url or 'renew' in form_text.lower() or 'renew' in form_text:
                 fallback_form = form
                 fallback_action = action_url
 
@@ -538,13 +538,13 @@ class HidenCloudBot:
 
     def try_handle_invoice_from_response(self, service_id, response, allow_invoice_poll=True):
         if '/invoice/' in response.url:
-            self.log("⚡️ 续期成功，已跳转账单页，自动执行支付...")
+            self.log("⚡️ Renewal successful, redirected to invoice page, auto-executing payment...")
             pay_result = self.perform_pay_from_html(response.text, response.url)
             if pay_result in {'paid', 'already_processed'}:
                 return True, 'invoice_page'
             if not allow_invoice_poll:
                 return False, None
-            self.log("⚠️ 跳转账单页当前不可支付，改为检查当前服务未付账单...")
+            self.log("⚠️ Redirected invoice page is not payable, switching to check current service unpaid invoices...")
             invoice_polled = self.check_and_pay_invoices(service_id, is_precheck=False, retries=6, retry_delay=8)
             if invoice_polled:
                 return True, 'invoice_poll'
@@ -553,13 +553,13 @@ class HidenCloudBot:
         soup_resp = BeautifulSoup(response.text, 'html.parser')
         server_error = self.extract_server_error_message(soup_resp)
         if server_error:
-            self.log(f"⚠️ 续期请求被服务端拒绝，页面提示: {server_error}")
+            self.log(f"⚠️ Renewal request rejected by server, page message: {server_error}")
             return True, 'server_reject'
 
         invoice_links = self.extract_invoice_links(soup_resp, require_payment_context=False)
         if invoice_links:
             for invoice_url in invoice_links:
-                self.log(f"🔗 在响应HTML中发现账单链接: {invoice_url}")
+                self.log(f"🔗 Found invoice link in response HTML: {invoice_url}")
                 pay_result = self.pay_single_invoice(invoice_url)
                 if pay_result in {'paid', 'already_processed'}:
                     return True, 'invoice_link'
@@ -567,7 +567,7 @@ class HidenCloudBot:
             if not allow_invoice_poll:
                 return False, None
 
-            self.log("⚠️ 响应中的账单链接均不可支付，改为检查当前服务未付账单...")
+            self.log("⚠️ Invoice links in response are not payable, switching to check current service unpaid invoices...")
             invoice_polled = self.check_and_pay_invoices(service_id, is_precheck=False, retries=6, retry_delay=8)
             if invoice_polled:
                 return True, 'invoice_poll'
@@ -575,17 +575,17 @@ class HidenCloudBot:
 
         err_div = soup_resp.find('div', class_=re.compile(r'(alert-danger|text-danger|error)'))
         if err_div:
-            self.log(f"⚠️ 续期请求被服务端拒绝，页面提示: {err_div.get_text(strip=True)}")
+            self.log(f"⚠️ Renewal request rejected by server, page message: {err_div.get_text(strip=True)}")
             return True, 'server_reject'
 
         if not allow_invoice_poll:
             return False, None
 
         if response.status_code == 419:
-            self.log("⚠️ 续期请求返回 419，重试后仍未跳转，开始检查是否生成账单...")
+            self.log("⚠️ Renewal request returned 419, no redirect after retry, checking if invoice was generated...")
         else:
-            self.log(f"⚠️ 提交成功但未自动跳转，响应URL: {response.url} | 状态码: {response.status_code}")
-            self.log("后置轮询检查账单...")
+            self.log(f"⚠️ Submission succeeded but no auto-redirect, response URL: {response.url} | Status code: {response.status_code}")
+            self.log("Post-submission polling for invoices...")
 
         invoice_polled = self.check_and_pay_invoices(service_id, is_precheck=False, retries=6, retry_delay=8)
         if invoice_polled:
@@ -593,16 +593,16 @@ class HidenCloudBot:
         return False, None
 
     def init(self):
-        self.log("正在验证登录状态...")
+        self.log("Verifying login status...")
         try:
             res = self.request('GET', '/dashboard')
 
             if '/login' in res.url:
-                self.log("❌ 当前 Cookie 已失效")
+                self.log("❌ Current Cookie has expired")
                 return False
 
             soup = BeautifulSoup(res.text, 'html.parser')
-            log_print(f"👀 [调试] 网页标题是: {soup.title.string if soup.title else '无标题'}")
+            log_print(f"ð [Debug] Page title: {soup.title.string if soup.title else 'No title'}") #VW
 
             self._refresh_csrf(soup)
 
@@ -614,26 +614,26 @@ class HidenCloudBot:
                     if not any(s['id'] == svc_id for s in self.services):
                         self.services.append({'id': svc_id, 'url': href})
 
-            self.log(f"✅ 登录成功，发现 {len(self.services)} 个服务。")
+            self.log(f"✅ Login successful, found {len(self.services)} services.")
             self.save_cookies(upload=True)
             return True
         except Exception as e:
-            self.log(f"❌ 初始化异常: {e}")
+            self.log(f"❌ Initialization exception: {e}")
             return False
 
     def process_service(self, service, allow_rebuild_retry=True, skip_initial_delay=False, rebuild_retry=False):
         if not skip_initial_delay:
             sleep_random(2000, 4000)
-        self.log(f">>> 处理服务 ID: {service['id']}")
+        self.log(f">>> Processing service ID: {service['id']}")
 
         try:
-            # 1. 预检：清理遗留未付账单（已处理过的会被 processed_invoices 过滤）
+            # 1. Precheck: clear legacy unpaid invoices (already processed ones are filtered by processed_invoices)
             self.check_and_pay_invoices(service['id'], is_precheck=True)
 
-            # 2. 获取管理页面，同时刷新 CSRF token
+            # 2. Fetch manage page and refresh CSRF token
             manage_res, soup = self.fetch_manage_page(service['id'])
 
-            # ================== 3. 检测是否允许续期 ==================
+            # ================== 3. Check if Renewal is Allowed ==================
             renew_btn = soup.find('button', onclick=re.compile(r'showRenewAlert'))
             if renew_btn:
                 onclick_val = renew_btn['onclick']
@@ -645,17 +645,17 @@ class HidenCloudBot:
 
                     if days_until > threshold:
                         threshold_text = "1 day" if threshold == 1 else f"{threshold} days"
-                        kind = "免费服务" if is_free else "服务"
-                        self.log(f"⏳ 暂未到达续期时间: {kind}剩余时间低于 {threshold_text} 才可续期。当前剩余: {days_until} 天。")
+                        kind = "Free service" if is_free else "Service"
+                        self.log(f"⏳ Not yet time for renewal: {kind} must have less than {threshold_text} remaining to renew. Currently: {days_until} days remaining.")
                         return
 
-            # ================== 4. 执行单次精准续期 ==================
+            # ================== 4. Execute Single Precise Renewal ==================
             token_input = soup.find('input', attrs={'name': '_token'})
             if not token_input:
-                self.log("❌ 无法找到续期 Token (可能是服务已到期或页面结构变更)")
+                self.log("❌ Cannot find renewal Token (service may have expired or page structure changed)")
                 return
 
-            self.log(f"提交续期 ({RENEW_DAYS}天)...")
+            self.log(f"Submitting renewal ({RENEW_DAYS} days)...")
             sleep_random(1000, 2000)
 
             submit_stage = 'first_submit'
@@ -663,37 +663,37 @@ class HidenCloudBot:
             handled, outcome = self.try_handle_invoice_from_response(service['id'], res, allow_invoice_poll=False)
 
             if not handled and res.status_code == 419:
-                self.log("♻️ 首次续期请求返回 419，刷新管理页获取新 Token 后重试一次...")
+                self.log("♻️ First renewal request returned 419, refreshing manage page to get new Token and retrying...")
                 sleep_random(1000, 2000)
                 manage_res, soup = self.fetch_manage_page(service['id'])
                 submit_stage = 'same_session_retry'
                 res = self.submit_renew_request(service['id'], soup, manage_res.url)
                 handled, outcome = False, None
 
-            # ================== 5. 结果校验与支付 ==================
+            # ================== 5. Result Validation and Payment ==================
             if not handled:
                 handled, outcome = self.try_handle_invoice_from_response(service['id'], res)
 
             if handled and outcome in {'invoice_page', 'invoice_link', 'invoice_poll'}:
                 self.log(f"[RENEW_RESULT] {success_path_label(submit_stage, rebuild_retry=rebuild_retry)}")
             elif handled and outcome == 'server_reject':
-                self.log(f"[RENEW_RESULT] {'重建会话后' if rebuild_retry else '当前会话'}提交已被服务端拒绝")
+                self.log(f"[RENEW_RESULT] {"After session rebuild" if rebuild_retry else "Current session"} submission rejected by server")
 
             if not handled and allow_rebuild_retry and res.status_code == 419:
-                self.log("♻️ 当前会话内续期仍失败，模拟重跑 Job：重建会话后完整重试当前服务一次...")
+                self.log("♻️ Renewal still failed within current session, simulating Job re-run: rebuilding session and fully retrying current service once...")
                 if self.rebuild_session_and_reinit():
                     self.process_service(service, allow_rebuild_retry=False, skip_initial_delay=True, rebuild_retry=True)
                 else:
-                    self.log("❌ 重建会话后仍无法重新登录，放弃本服务本轮续期")
-                    self.mark_retry_needed(f"服务 {service['id']} 重建会话后仍无法完成续期")
+                    self.log("❌ Still unable to re-login after session rebuild, abandoning this service for this run")
+                    self.mark_retry_needed(f"Service {service['id']} still unable to complete renewal after session rebuild")
             elif not handled:
-                self.mark_retry_needed(f"服务 {service['id']} 本轮续期未完成")
+                self.mark_retry_needed(f"Service {service['id']} renewal not completed this run")
 
         except Exception as e:
-            self.log(f"处理异常: {e}")
-            self.mark_retry_needed(f"服务 {service['id']} 处理异常")
+            self.log(f"Processing exception: {e}")
+            self.mark_retry_needed(f"Service {service['id']} processing exception")
         finally:
-            # 每处理完一个服务保存一次 Cookie，而非每次请求都上传
+            # Save cookies after each service, not after every request
             self.save_cookies(upload=True)
 
     def check_and_pay_invoices(self, service_id, is_precheck=False, retries=1, retry_delay=5):
@@ -706,21 +706,21 @@ class HidenCloudBot:
                 soup = BeautifulSoup(res.text, 'html.parser')
                 invoice_links = self.extract_invoice_links(soup, require_payment_context=True)
 
-                # 过滤掉本次运行中已处理过的账单，避免重复操作
+                # Filter out invoices already processed this run to avoid duplicate operations
                 unique_invoices = [url for url in set(invoice_links)
                                    if url not in self.processed_invoices
                                    and url not in self.non_payable_invoices]
 
                 if not unique_invoices:
                     if retries > 1 and attempt < retries - 1:
-                        self.log(f"⚪ 第{attempt+1}次检查无新账单，{retry_delay}秒后重试...")
+                        self.log(f"⚪ Check #{attempt+1} found no new invoices, retrying in {retry_delay} seconds...")
                         time.sleep(retry_delay)
                         continue
                     if not is_precheck:
-                        self.log("⚪ 无未支付账单")
+                        self.log("⚪ No unpaid invoices")
                     return False
 
-                self.log(f"🔍 发现 {len(unique_invoices)} 个未付账单，准备清理...")
+                self.log(f"🔍 Found {len(unique_invoices)} unpaid invoices, preparing to process...")
                 paid_any = False
                 for url in unique_invoices:
                     pay_result = self.pay_single_invoice(url)
@@ -730,35 +730,35 @@ class HidenCloudBot:
                 return paid_any
 
             except Exception as e:
-                self.log(f"查账单出错: {e}")
-                self.mark_retry_needed(f"服务 {service_id} 查询账单异常")
+                self.log(f"Error checking invoices: {e}")
+                self.mark_retry_needed(f"Service {service_id} invoice query exception")
                 return False
 
     def pay_single_invoice(self, url):
         normalized_url = self.normalize_url(url)
         if normalized_url in self.processed_invoices:
-            self.log(f"⏭️ 账单已处理，跳过重复支付: {normalized_url}")
+            self.log(f"⏭️ Invoice already processed, skipping duplicate payment: {normalized_url}")
             return 'already_processed'
         if normalized_url in self.non_payable_invoices:
-            self.log(f"⏭️ 账单当前不可支付，跳过重复检查: {normalized_url}")
+            self.log(f"⏭️ Invoice not payable, skipping duplicate check: {normalized_url}")
             return 'non_payable'
 
         try:
-            self.log(f"📄 打开账单: {normalized_url}")
+            self.log(f"📄 Opening invoice: {normalized_url}")
             res = self.request('GET', normalized_url)
             return self.perform_pay_from_html(res.text, normalized_url)
         except Exception as e:
-            self.log(f"访问账单失败: {e}")
-            self.mark_retry_needed("账单页面访问失败")
+            self.log(f"Failed to access invoice: {e}")
+            self.mark_retry_needed("Invoice page access failed")
             return 'invoice_fetch_failed'
 
     def perform_pay_from_html(self, html_content, current_url):
         normalized_current_url = self.normalize_url(current_url)
         if normalized_current_url in self.processed_invoices:
-            self.log(f"⏭️ 账单已处理，跳过重复支付: {normalized_current_url}")
+            self.log(f"⏭️ Invoice already processed, skipping duplicate payment: {normalized_current_url}")
             return 'already_processed'
         if normalized_current_url in self.non_payable_invoices:
-            self.log(f"⏭️ 账单当前不可支付，跳过重复检查: {normalized_current_url}")
+            self.log(f"⏭️ Invoice not payable, skipping duplicate check: {normalized_current_url}")
             return 'non_payable'
 
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -786,19 +786,19 @@ class HidenCloudBot:
                     if form.find('button'):
                         target_form = form
                         target_action = action
-                        self.log(f"🔁 降级匹配到支付表单: {action}")
+                        self.log(f"🔁 Fallback matched payment form: {action}")
                         break
 
         if not target_form:
-            page_title = soup.title.string.strip() if soup.title and soup.title.string else "无标题"
+            page_title = soup.title.string.strip() if soup.title and soup.title.string else "No title"
             page_text = soup.get_text(" ", strip=True)
             if not self.has_invoice_payment_context(page_text):
                 self.non_payable_invoices.add(normalized_current_url)
-                self.log(f"⚪ 账单页面未显示未支付/支付入口，视为本轮不可支付并跳过: {normalized_current_url}")
+                self.log(f"⚪ Invoice page does not show unpaid/payment entry, marking as unpayable this run and skipping: {normalized_current_url}")
                 return 'non_payable'
             else:
-                self.log(f"⚠️ 未找到可用的支付表单，可能页面结构变更。标题: {page_title}")
-                self.mark_retry_needed(f"账单 {normalized_current_url} 页面结构疑似变更")
+                self.log(f"⚠️ No usable payment form found, page structure may have changed. Title: {page_title}")
+                self.mark_retry_needed(f"Invoice {normalized_current_url} page structure appears changed")
                 return 'payment_form_missing'
 
         payload = {}
@@ -808,26 +808,26 @@ class HidenCloudBot:
             if name:
                 payload[name] = value
 
-        self.log("👉 提交支付...")
+        self.log("👉 Submitting payment...")
         try:
             action_url = self.normalize_url(target_action)
             headers = {'X-CSRF-TOKEN': self.csrf_token, 'Referer': current_url}
             res = self.request('POST', action_url, data=payload, headers=headers)
 
             if res.status_code == 200:
-                self.log("✅ 支付成功！")
+                self.log("✅ Payment successful!")
                 self.processed_invoices.add(normalized_current_url)
                 return 'paid'
             else:
-                self.log(f"⚠️ 支付响应: {res.status_code}")
-                self.mark_retry_needed(f"账单 {normalized_current_url} 支付响应异常")
+                self.log(f"⚠️ Payment response: {res.status_code}")
+                self.mark_retry_needed(f"Invoice {normalized_current_url} payment response abnormal")
                 return 'payment_failed'
         except Exception as e:
-            self.log(f"❌ 支付失败: {e}")
-            self.mark_retry_needed(f"账单 {normalized_current_url} 支付异常")
+            self.log(f"❌ Payment failed: {e}")
+            self.mark_retry_needed(f"Invoice {normalized_current_url} payment exception")
             return 'payment_failed'
 
-# ================= 主程序 =================
+# ================= Main Program =================
 if __name__ == '__main__':
     env_cookies = os.environ.get("HIDEN_COOKIE", "")
     cookies_list = re.split(r'[&\n]', env_cookies)
@@ -835,12 +835,12 @@ if __name__ == '__main__':
     any_retry_needed = False
 
     if not cookies_list:
-        log_print("❌ 未配置环境变量 HIDEN_COOKIE")
+        log_print("❌ Environment variable HIDEN_COOKIE not configured")
         sys.exit(1)
 
     WebDavManager().download()
 
-    log_print(f"\n=== HidenCloud 续期脚本启动 (Python版) ===")
+    log_print(f"\n=== HidenCloud Renewal Script Started (Python) ===")
 
     for i, cookie in enumerate(cookies_list):
         bot = HidenCloudBot(cookie, i)
@@ -854,8 +854,8 @@ if __name__ == '__main__':
             for service in bot.services:
                 bot.process_service(service)
         else:
-            log_print(f"账号 {i + 1}: 登录失败，请检查 Cookie")
-            bot.mark_retry_needed("账号初始化失败")
+            log_print(f"Account {i + 1}: Login failed, please check Cookie")
+            bot.mark_retry_needed("Account initialization failed")
 
         if bot.retry_needed:
             any_retry_needed = True
@@ -866,10 +866,10 @@ if __name__ == '__main__':
 
     final_content = "\n".join(ALL_LOGS)
     if final_content:
-        send_notify("HidenCloud 续期报告", final_content)
+        send_notify("HidenCloud Renewal Report", final_content)
 
     if any_retry_needed:
-        log_print("🔁 本轮存在可重试失败，脚本将返回退出码 1，供 GitHub Actions 延时再跑一次")
+        log_print("🔁 Retriable failures found this run, script will exit with code 1 for GitHub Actions to re-run later")
         sys.exit(1)
 
     sys.exit(0)
