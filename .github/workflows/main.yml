@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   schedule:
     # Initial time, script auto-modifies this minute
-    - cron: '20 2 * * *'
+    - cron: '31 2 * * *'
 
 permissions:
   contents: read # Main script only needs read permission, write permission handled by cron.yml
