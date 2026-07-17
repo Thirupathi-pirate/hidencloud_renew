@@ -1,14 +1,14 @@
-# 文件路径: .github/workflows/main.yml
+# File path: .github/workflows/main.yml
 name: HidenCloud Auto Renew (Python)
 
 on:
   workflow_dispatch:
   schedule:
-    # 初始时间，脚本会自动修改这个分钟数
+    # Initial time, script auto-modifies this minute
     - cron: '20 2 */4 * *'
 
 permissions:
-  contents: read # 主脚本只需要读权限，修改权限交给 cron.yml
+  contents: read # Main script only needs read permission, write permission handled by cron.yml
 
 jobs:
   run-script:
@@ -133,7 +133,7 @@ jobs:
         code=${PIPESTATUS[0]}
     
         echo "::group::🔎 Attempt 1 Highlights"
-        grep -E '\[RENEW_RESULT\]|\[COOKIE_NORMALIZED\]|支付成功|续期成功|登录失败|重跑|失败' attempt1.log || true
+        grep -E '\[RENEW_RESULT\]|\[COOKIE_NORMALIZED\]|Payment successful|Renewal successful|Login failed|Retry|Failed' attempt1.log || true
         echo "::endgroup::"
         echo "::endgroup::"
     
@@ -164,7 +164,7 @@ jobs:
         code=${PIPESTATUS[0]}
     
         echo "::group::🔎 Attempt 2 Highlights"
-        grep -E '\[RENEW_RESULT\]|\[COOKIE_NORMALIZED\]|支付成功|续期成功|登录失败|重跑|失败' attempt2.log || true
+        grep -E '\[RENEW_RESULT\]|\[COOKIE_NORMALIZED\]|Payment successful|Renewal successful|Login failed|Retry|Failed' attempt2.log || true
         echo "::endgroup::"
         echo "::endgroup::"
     
